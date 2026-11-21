@@ -18,6 +18,18 @@ def pytest_collectreport(report):
         _errors.add(report.nodeid)
 
 
+def pytest_collection_modifyitems(session, config, items):
+    only = os.environ.get("TRUTH_ONLY")
+    if not only:
+        return
+    keep = set(open(only).read().split("\n"))
+    sel = [i for i in items if i.nodeid in keep]
+    desel = [i for i in items if i.nodeid not in keep]
+    if desel:
+        config.hook.pytest_deselected(items=desel)
+    items[:] = sel
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     out = os.environ.get("FAILOUT")
