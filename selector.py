@@ -17,7 +17,10 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
+
+T0 = time.monotonic()
 
 DATA = Path(os.environ.get("BLAST_DATA", "/data"))
 SRC = Path(os.environ.get("BLAST_SRC", "/opt/sqlglot"))
@@ -462,6 +465,9 @@ OVERHEAD_MS = int(os.environ.get("BLAST_OVERHEAD_MS", "150"))
 CPU_SCALE = float(os.environ.get("BLAST_CPU_SCALE", "1.5"))  # server CPU per measured ms
 MIN_WITNESSES = int(os.environ.get("BLAST_MIN_WITNESSES", "3"))
 RUN_TIMEOUT = float(os.environ.get("BLAST_RUN_TIMEOUT", "60"))
+# wall seconds from start after which nothing more is run here (the batch has 3 min,
+# 4.5 in the final): later commits keep their static lists
+BUDGET_S = float(os.environ.get("BLAST_BUDGET_S", "100"))
 HEAVY_IMPORTS = {"tests/test_executor.py", "tests/test_optimizer.py"}
 # tests that start interpreters or measure memory of the process they run in: never
 # judged here, always listed when selected
@@ -600,10 +606,14 @@ def decide(sel: Selector, plans, run_fn) -> None:
     """run_fn(plan) -> list of failing ids, or None when the run gave no answer."""
     costs = Costs(sel)
     for p in plans:
+        left = BUDGET_S - (time.monotonic() - T0)
+        if left < 5:
+            log(f"{p.cid}: time budget spent; static kept")
+            continue
         try:
             if not dynamic_choice(sel, costs, p):
                 continue
-            bad = run_fn(p)
+            bad = run_fn(p, min(RUN_TIMEOUT, left))
         except Exception as e:  # noqa: BLE001
             log(f"{p.cid}: dynamic stage error {e!r}; static kept")
             continue
@@ -629,14 +639,14 @@ def main() -> None:
 
     state = {"warm": False}
 
-    def run_here(p):
+    def run_here(p, timeout):
         import runner
 
         files = {sel.ids[t].split("::", 1)[0] for t in p.order}
         if not state["warm"] and files & HEAVY_IMPORTS:
             runner.warm()
             state["warm"] = True
-        return runner.run_tests(str(SRC), p.patched, [sel.ids[t] for t in p.order], RUN_TIMEOUT)
+        return runner.run_tests(str(SRC), p.patched, [sel.ids[t] for t in p.order], timeout)
 
     decide(sel, plans, run_here)
 

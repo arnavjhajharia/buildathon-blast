@@ -30,7 +30,7 @@ for c in sorted(A):
 cpu = {}
 
 
-def fake_run(p):
+def fake_run(p, timeout=None):
     fail = set(A[p.cid]["failing"])
     cpu[p.cid] = costs.cost_until(p.order, stop_at=fail)
     hit = [X.ids[t] for t in p.order if t in fail]

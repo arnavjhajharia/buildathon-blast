@@ -132,7 +132,11 @@ for patch in sorted(glob.glob(os.path.join(SET, "commits", "*.patch"))):
     errors = []
     for f in glob.glob(os.path.join(out, "*.txt")):
         for line in open(f):
-            k, nid = line.rstrip("\n").split(" ", 1)
+            k, _, nid = line.rstrip("\n").partition(" ")
+            if k == "E" and not nid:
+                failing.update(num.values())  # the whole session failed to collect
+                errors.append("collect:<root>")
+                continue
             if k == "F":
                 if nid in num:
                     failing.add(num[nid])
