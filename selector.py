@@ -464,6 +464,7 @@ P_LIVE = float(os.environ.get("BLAST_P_LIVE", "0.5"))
 OVERHEAD_MS = int(os.environ.get("BLAST_OVERHEAD_MS", "150"))
 CPU_SCALE = float(os.environ.get("BLAST_CPU_SCALE", "1.5"))  # server CPU per measured ms
 MIN_WITNESSES = int(os.environ.get("BLAST_MIN_WITNESSES", "3"))
+STRICT_GIANTS = os.environ.get("BLAST_STRICT_GIANTS", "1") == "1"
 RUN_TIMEOUT = float(os.environ.get("BLAST_RUN_TIMEOUT", "60"))
 # wall seconds from start after which nothing more is run here (the batch has 3 min,
 # 4.5 in the final): later commits keep their static lists
@@ -573,23 +574,34 @@ def dynamic_choice(sel: Selector, costs: Costs, p: Plan) -> bool:
     # giants are dropped when every shorter test passes, but only if every changed
     # statement is reached by at least MIN_WITNESSES shorter tests (a statement only a
     # long test reaches, like a size limit, is judged by that test alone)
-    skip_ok = all(len(got - giants - unver) >= MIN_WITNESSES for kind, got in p.evidence)
     static_cost = cost_of(pack(p.static, ms), ms)
     # tests that cost far more to run here than to list (process pools run inline)
     dear = {t for t in run if costs.run_ms(t) > 2 * ms[t] and costs.run_ms(t) > 300}
-    best = None
-    for listed in ({frozenset()} | ({frozenset(dear)} if dear else set())):
+
+    def evaluate(listed):
+        """Expected cost when `listed` is listed unrun and the rest of `run` is run
+        here; giants are left out only when each changed statement has at least
+        MIN_WITNESSES shorter tests that are run here."""
         r = run - listed
         if not r:
-            continue
+            return None
+        skip_ok = all(len(got & r) >= MIN_WITNESSES for kind, got in p.evidence)
+        if STRICT_GIANTS and listed:
+            # a test listed unrun is no evidence: giants stay listed beside it
+            skip_ok = False
         keep = unver | listed | (set() if skip_ok else giants)
         order = costs.order(r)
         run_ms = costs.cost_until(order)
         pass_cost = cost_of(pack(keep, ms), ms)
         # a live change is usually caught early: charge part of the run
         expected = P_LIVE * (0.3 * run_ms + static_cost) + (1 - P_LIVE) * (run_ms + pass_cost)
-        if best is None or expected < best[0]:
-            best = (expected, order, keep)
+        return (expected, order, keep, listed)
+
+    best = None
+    for listed in ({frozenset()} | ({frozenset(dear)} if dear else set())):
+        got = evaluate(set(listed))
+        if got is not None and (best is None or got[0] < best[0]):
+            best = got
     if best is None or best[0] >= static_cost:
         return False
     p.order = best[1]
