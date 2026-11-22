@@ -100,6 +100,10 @@ class _Result(unittest.TestResult):
     def addUnexpectedSuccess(self, test):
         self._bad(test)
 
+    def addSkip(self, test, reason):
+        # a test skipped here may run (and fail) on the scorer: no answer
+        self._bad(test)
+
 
 def _tid(test):
     # class-level errors (setUpClass) arrive as _ErrorHolder
