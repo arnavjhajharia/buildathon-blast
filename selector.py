@@ -591,6 +591,11 @@ def dynamic_choice(sel: Selector, costs: Costs, p: Plan) -> bool:
     return True
 
 
+def _cpu() -> float:
+    t = os.times()
+    return t.user + t.system + t.children_user + t.children_system
+
+
 def decide(sel: Selector, plans, run_fn) -> None:
     """run_fn(plan) -> list of failing ids, or None when the run gave no answer."""
     costs = Costs(sel)
@@ -603,10 +608,10 @@ def decide(sel: Selector, plans, run_fn) -> None:
             log(f"{p.cid}: dynamic stage error {e!r}; static kept")
             continue
         if bad is None or bad:
-            log(f"{p.cid}: ran {len(p.order)} here: {'no answer' if bad is None else len(bad)} failing -> static")
+            log(f"{p.cid}: ran {len(p.order)} here (cpu so far {_cpu():.2f}s): {'no answer' if bad is None else len(bad)} failing -> static")
             p.final = p.static
         else:
-            log(f"{p.cid}: ran {len(p.order)} here, all pass -> list {len(p.keep)}")
+            log(f"{p.cid}: ran {len(p.order)} here (cpu so far {_cpu():.2f}s), all pass -> list {len(p.keep)}")
             p.final = p.keep
 
 
